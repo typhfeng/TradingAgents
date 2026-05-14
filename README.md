@@ -166,6 +166,13 @@ python -m cli.main     # alternative: run directly from source
 ```
 You will see a screen where you can select your desired tickers, analysis date, LLM provider, research depth, and more.
 
+Launch the lightweight web GUI:
+```bash
+tradingagents web
+python -m cli.main web --host 127.0.0.1 --port 8080
+```
+The web GUI submits analysis jobs in the background and writes reports under the configured logs directory.
+
 <p align="center">
   <img src="assets/cli/cli_init.png" width="100%" style="display: inline-block; margin: 0 2%;">
 </p>
@@ -226,7 +233,7 @@ TradingAgents persists two kinds of state across runs.
 
 ### Decision log
 
-The decision log is always on. Each completed run appends its decision to `~/.tradingagents/memory/trading_memory.md`. On the next run for the same ticker, TradingAgents fetches the realised return (raw and alpha vs SPY), generates a one-paragraph reflection, and injects the most recent same-ticker decisions plus recent cross-ticker lessons into the Portfolio Manager prompt, so each analysis carries forward what worked and what didn't.
+The decision log is always on. Each completed run appends its decision to `/Volumes/ssd2/tradingagents/logs/memory/trading_memory.md`. On the next run for the same ticker, TradingAgents fetches the realised return (raw and alpha vs SPY), generates a one-paragraph reflection, and injects the most recent same-ticker decisions plus recent cross-ticker lessons into the Portfolio Manager prompt, so each analysis carries forward what worked and didn't.
 
 Override the path with `TRADINGAGENTS_MEMORY_LOG_PATH`.
 
@@ -234,7 +241,7 @@ Override the path with `TRADINGAGENTS_MEMORY_LOG_PATH`.
 
 Checkpoint resume is opt-in via `--checkpoint`. When enabled, LangGraph saves state after each node so a crashed or interrupted run resumes from the last successful step instead of starting over. On a resume run you will see `Resuming from step N for <TICKER> on <date>` in the logs; on a new run you will see `Starting fresh`. Checkpoints are cleared automatically on successful completion.
 
-Per-ticker SQLite databases live at `~/.tradingagents/cache/checkpoints/<TICKER>.db` (override the base with `TRADINGAGENTS_CACHE_DIR`). Use `--clear-checkpoints` to reset all of them before a run.
+Per-ticker SQLite databases live at `/Volumes/ssd2/tradingagents/cache/checkpoints/<TICKER>.db` (override the base with `TRADINGAGENTS_CACHE_DIR`). Run outputs live under `/Volumes/ssd2/tradingagents/logs` (override with `TRADINGAGENTS_RESULTS_DIR`). Use `--clear-checkpoints` to reset all of them before a run.
 
 ```bash
 tradingagents analyze --checkpoint           # enable for this run

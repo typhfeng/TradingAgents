@@ -1,12 +1,14 @@
 import os
 
-_TRADINGAGENTS_HOME = os.path.join(os.path.expanduser("~"), ".tradingagents")
+_TRADINGAGENTS_HOME = "/Volumes/ssd2/tradingagents"
+_TRADINGAGENTS_CACHE_DIR = os.path.join(_TRADINGAGENTS_HOME, "cache")
+_TRADINGAGENTS_LOGS_DIR = os.path.join(_TRADINGAGENTS_HOME, "logs")
 
 DEFAULT_CONFIG = {
     "project_dir": os.path.abspath(os.path.join(os.path.dirname(__file__), ".")),
-    "results_dir": os.getenv("TRADINGAGENTS_RESULTS_DIR", os.path.join(_TRADINGAGENTS_HOME, "logs")),
-    "data_cache_dir": os.getenv("TRADINGAGENTS_CACHE_DIR", os.path.join(_TRADINGAGENTS_HOME, "cache")),
-    "memory_log_path": os.getenv("TRADINGAGENTS_MEMORY_LOG_PATH", os.path.join(_TRADINGAGENTS_HOME, "memory", "trading_memory.md")),
+    "results_dir": os.getenv("TRADINGAGENTS_RESULTS_DIR", _TRADINGAGENTS_LOGS_DIR),
+    "data_cache_dir": os.getenv("TRADINGAGENTS_CACHE_DIR", _TRADINGAGENTS_CACHE_DIR),
+    "memory_log_path": os.getenv("TRADINGAGENTS_MEMORY_LOG_PATH", os.path.join(_TRADINGAGENTS_LOGS_DIR, "memory", "trading_memory.md")),
     # Optional cap on the number of resolved memory log entries. When set,
     # the oldest resolved entries are pruned once this limit is exceeded.
     # Pending entries are never pruned. None disables rotation entirely.

@@ -1217,5 +1217,17 @@ def analyze(
     run_analysis(checkpoint=checkpoint)
 
 
+@app.command()
+def web(
+    host: str = typer.Option("127.0.0.1", "--host", help="Host interface to bind."),
+    port: int = typer.Option(8080, "--port", help="Port to listen on."),
+    open_browser: bool = typer.Option(False, "--open", help="Open the web GUI in the default browser."),
+):
+    """Start the lightweight TradingAgents web GUI."""
+    from cli.web import run_web_server
+
+    run_web_server(host=host, port=port, open_browser=open_browser)
+
+
 if __name__ == "__main__":
     app()
