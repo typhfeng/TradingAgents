@@ -10,13 +10,17 @@ https://py.sdk.modelcontextprotocol.io/client/
 from __future__ import annotations
 
 import asyncio
+import inspect
 import json
 import os
+import subprocess
 import threading
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from typing import Any
+from urllib.parse import parse_qs, urlparse
 
 from .config import get_config
 
@@ -36,36 +40,46 @@ class LongbridgeMCPSettings:
     access_token: str | None
     default_market: str | None
     timeout_seconds: float
+    oauth_token_file: str
+    oauth_callback_port: int
     tool_names: dict[str, str]
     tool_arguments: dict[str, dict[str, Any]]
 
 
 DEFAULT_TOOL_NAMES = {
-    "stock_data": "history_candlesticks_by_date",
-    "fundamentals": "company",
+    "stock_data": "candlesticks",
+    "fundamentals": "static_info",
     "balance_sheet": "financial_statement",
-    "cashflow": "cash_flow",
+    "cashflow": "financial_statement",
     "income_statement": "financial_statement",
-    "news": "news_search",
+    "news": "news",
     "global_news": "news_search",
     "insider_transactions": "executive",
 }
 
 DEFAULT_TOOL_ARGUMENTS = {
     "stock_data": {
-        "period": 1000,  # Period.Day in the Longbridge OpenAPI enum.
-        "adjust_type": 0,  # AdjustType.NoAdjust.
+        "period": "day",
+        "count": 1000,
+        "forward_adjust": True,
+        "trade_sessions": "intraday",
     },
     "balance_sheet": {
-        "statement_type": "balance_sheet",
+        "kind": "BS",
+        "report": "qf",
     },
     "income_statement": {
-        "statement_type": "income_statement",
+        "kind": "IS",
+        "report": "qf",
     },
-    "cashflow": {},
+    "cashflow": {
+        "kind": "CF",
+        "report": "qf",
+    },
     "news": {},
     "global_news": {
         "keyword": "stock market economy",
+        "limit": 20,
     },
     "insider_transactions": {},
 }
@@ -89,6 +103,14 @@ def _get_settings() -> LongbridgeMCPSettings:
     timeout_seconds = float(
         os.getenv("TRADINGAGENTS_LONGBRIDGE_MCP_TIMEOUT", config.get("timeout_seconds", 30))
     )
+    oauth_token_file = (
+        os.getenv("TRADINGAGENTS_LONGBRIDGE_MCP_TOKEN_FILE")
+        or config.get("oauth_token_file")
+        or "/tmp/longbridge_mcp_oauth.json"
+    )
+    oauth_callback_port = int(
+        os.getenv("TRADINGAGENTS_LONGBRIDGE_MCP_CALLBACK_PORT", config.get("oauth_callback_port", 8765))
+    )
     tool_names = DEFAULT_TOOL_NAMES | config.get("tool_names", {})
     tool_arguments = {
         key: (DEFAULT_TOOL_ARGUMENTS.get(key, {}) | config.get("tool_arguments", {}).get(key, {}))
@@ -100,6 +122,8 @@ def _get_settings() -> LongbridgeMCPSettings:
         access_token=access_token,
         default_market=default_market,
         timeout_seconds=timeout_seconds,
+        oauth_token_file=oauth_token_file,
+        oauth_callback_port=oauth_callback_port,
         tool_names=tool_names,
         tool_arguments=tool_arguments,
     )
@@ -149,14 +173,13 @@ async def _open_session(settings: LongbridgeMCPSettings):
             "Install project dependencies from pyproject.toml before using this vendor."
         ) from exc
 
-    headers = {}
-    if settings.access_token:
-        headers["Authorization"] = f"Bearer {settings.access_token}"
+    http_client = _create_http_client(settings)
+    kwargs = {}
+    if http_client is not None and "http_client" in inspect.signature(streamable_http_client).parameters:
+        kwargs["http_client"] = http_client
+    elif settings.access_token and "headers" in inspect.signature(streamable_http_client).parameters:
+        kwargs["headers"] = {"Authorization": f"Bearer {settings.access_token}"}
 
-    # The official MCP Python SDK documents streamable_http_client(url) with
-    # ClientSession(read, write), and accepts headers for authenticated HTTP MCP
-    # endpoints.
-    kwargs = {"headers": headers} if headers else {}
     async with streamable_http_client(settings.endpoint, **kwargs) as (
         read_stream,
         write_stream,
@@ -165,6 +188,133 @@ async def _open_session(settings: LongbridgeMCPSettings):
         async with ClientSession(read_stream, write_stream) as session:
             await asyncio.wait_for(session.initialize(), timeout=settings.timeout_seconds)
             yield session
+    if http_client is not None:
+        await http_client.aclose()
+
+
+def _create_http_client(settings: LongbridgeMCPSettings):
+    try:
+        import httpx
+    except ModuleNotFoundError as exc:
+        raise LongbridgeMCPError("Longbridge MCP OAuth support requires httpx.") from exc
+
+    if settings.access_token:
+        return httpx.AsyncClient(
+            headers={"Authorization": f"Bearer {settings.access_token}"},
+            follow_redirects=True,
+            timeout=settings.timeout_seconds,
+        )
+
+    return httpx.AsyncClient(
+        auth=_create_oauth_provider(settings),
+        follow_redirects=True,
+        timeout=settings.timeout_seconds,
+    )
+
+
+def _create_oauth_provider(settings: LongbridgeMCPSettings):
+    try:
+        from mcp.client.auth import OAuthClientProvider
+        from mcp.shared.auth import OAuthClientMetadata
+        from pydantic import AnyUrl
+    except ModuleNotFoundError as exc:
+        raise LongbridgeMCPError("Longbridge MCP OAuth support requires the MCP auth dependencies.") from exc
+
+    callback_url = f"http://127.0.0.1:{settings.oauth_callback_port}/callback"
+    return OAuthClientProvider(
+        server_url=settings.endpoint.removesuffix("/mcp"),
+        client_metadata=OAuthClientMetadata(
+            client_name="TradingAgents Local Longbridge MCP",
+            redirect_uris=[AnyUrl(callback_url)],
+            grant_types=["authorization_code", "refresh_token"],
+            response_types=["code"],
+            scope="openid profile",
+        ),
+        storage=_FileTokenStorage(settings.oauth_token_file),
+        redirect_handler=_open_authorization_url,
+        callback_handler=lambda: _wait_for_oauth_callback(settings.oauth_callback_port),
+    )
+
+
+class _FileTokenStorage:
+    def __init__(self, path: str):
+        self.path = path
+        self.tokens = None
+        self.client_info = None
+        if os.path.exists(path):
+            try:
+                from mcp.shared.auth import OAuthClientInformationFull, OAuthToken
+
+                with open(path, encoding="utf-8") as f:
+                    data = json.load(f)
+                if data.get("tokens"):
+                    self.tokens = OAuthToken.model_validate(data["tokens"])
+                if data.get("client_info"):
+                    self.client_info = OAuthClientInformationFull.model_validate(data["client_info"])
+            except Exception:
+                self.tokens = None
+                self.client_info = None
+
+    def _save(self):
+        data = {
+            "tokens": self.tokens.model_dump(mode="json") if self.tokens else None,
+            "client_info": self.client_info.model_dump(mode="json") if self.client_info else None,
+        }
+        with open(self.path, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2)
+
+    async def get_tokens(self):
+        return self.tokens
+
+    async def set_tokens(self, tokens):
+        self.tokens = tokens
+        self._save()
+
+    async def get_client_info(self):
+        return self.client_info
+
+    async def set_client_info(self, client_info):
+        self.client_info = client_info
+        self._save()
+
+
+async def _open_authorization_url(auth_url: str):
+    print(f"Longbridge MCP authorization required: {auth_url}", flush=True)
+    try:
+        subprocess.run(["open", auth_url], check=False)
+    except Exception:
+        pass
+
+
+async def _wait_for_oauth_callback(port: int):
+    loop = asyncio.get_running_loop()
+    callback_future = loop.create_future()
+
+    class CallbackHandler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            parsed = urlparse(self.path)
+            params = parse_qs(parsed.query)
+            code = params.get("code", [None])[0]
+            state = params.get("state", [None])[0]
+            error = params.get("error", [None])[0]
+            self.send_response(200 if code or error else 204)
+            self.end_headers()
+            if (code or error) and not callback_future.done():
+                if error:
+                    loop.call_soon_threadsafe(callback_future.set_exception, RuntimeError(error))
+                else:
+                    loop.call_soon_threadsafe(callback_future.set_result, (code, state))
+
+        def log_message(self, *_args):
+            pass
+
+    server = HTTPServer(("127.0.0.1", port), CallbackHandler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        return await asyncio.wait_for(callback_future, timeout=300)
+    finally:
+        server.shutdown()
 
 
 async def _call_mcp_tool_async(tool_name: str, arguments: dict[str, Any]) -> Any:
@@ -259,16 +409,23 @@ def _format_candlesticks(symbol: str, start_date: str, end_date: str, result: An
         date_text = str(timestamp)
         if isinstance(timestamp, (int, float)):
             date_text = datetime.fromtimestamp(timestamp, tz=timezone.utc).strftime("%Y-%m-%d")
-        csv_rows.append(
-            ",".join(
-                str(row.get(field, ""))
-                for field in ("date", "open", "high", "low", "close", "volume", "turnover")
-            ).replace(str(row.get("date", "")), date_text, 1)
-        )
+        elif "T" in date_text:
+            date_text = date_text[:10]
+        if date_text < start_date or date_text > end_date:
+            continue
+        csv_rows.append(",".join(str(value) for value in (
+            date_text,
+            row.get("open", ""),
+            row.get("high", ""),
+            row.get("low", ""),
+            row.get("close", ""),
+            row.get("volume", ""),
+            row.get("turnover", ""),
+        )))
 
     header = f"# Stock data for {symbol} from {start_date} to {end_date}\n"
     header += f"# Data source: Longbridge MCP\n"
-    header += f"# Total records: {len(rows)}\n\n"
+    header += f"# Total records: {max(len(csv_rows) - 1, 0)}\n\n"
     return header + "\n".join(csv_rows)
 
 
@@ -314,11 +471,6 @@ def get_stock(
         "stock_data",
         {
             "symbol": normalized_symbol,
-            "query_type": 2,
-            "date_request": {
-                "start_date": _compact_date(start_date),
-                "end_date": _compact_date(end_date),
-            },
         },
     )
     return _format_candlesticks(normalized_symbol, start_date, end_date, result)
@@ -327,7 +479,7 @@ def get_stock(
 def get_fundamentals(ticker: str, curr_date: str = None) -> str:
     settings = _get_settings()
     normalized_symbol = _normalize_symbol(ticker, settings.default_market)
-    result = _call_configured_tool("fundamentals", {"symbol": normalized_symbol})
+    result = _call_configured_tool("fundamentals", {"symbols": [normalized_symbol]})
     return _format_raw_result(f"Company fundamentals for {normalized_symbol}", result)
 
 
@@ -346,12 +498,7 @@ def get_income_statement(ticker: str, freq: str = "quarterly", curr_date: str = 
 def _get_statement(key: str, ticker: str, freq: str, curr_date: str | None):
     settings = _get_settings()
     normalized_symbol = _normalize_symbol(ticker, settings.default_market)
-    args = {
-        "symbol": normalized_symbol,
-        "frequency": freq,
-    }
-    if curr_date:
-        args["date"] = _compact_date(curr_date)
+    args = {"symbol": normalized_symbol}
     result = _call_configured_tool(key, args)
     return _format_raw_result(f"{key.replace('_', ' ').title()} for {normalized_symbol}", result)
 
@@ -361,12 +508,7 @@ def get_news(ticker: str, start_date: str, end_date: str) -> str:
     normalized_symbol = _normalize_symbol(ticker, settings.default_market)
     result = _call_configured_tool(
         "news",
-        {
-            "symbol": normalized_symbol,
-            "keyword": normalized_symbol,
-            "start_date": _compact_date(start_date),
-            "end_date": _compact_date(end_date),
-        },
+        {"symbol": normalized_symbol},
     )
     return _format_news(f"{normalized_symbol} News, from {start_date} to {end_date}", result)
 
@@ -375,8 +517,6 @@ def get_global_news(curr_date: str, look_back_days: int = 7, limit: int = 50) ->
     result = _call_configured_tool(
         "global_news",
         {
-            "end_date": _compact_date(curr_date),
-            "look_back_days": look_back_days,
             "limit": limit,
         },
     )

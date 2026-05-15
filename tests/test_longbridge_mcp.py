@@ -76,11 +76,12 @@ def test_stock_data_maps_dates_and_default_market(monkeypatch):
         (
             "history_candlesticks_by_date",
             {
-                "period": 1000,
-                "adjust_type": 0,
+                "period": "day",
+                "forward_adjust": True,
+                "trade_sessions": "intraday",
                 "symbol": "AAPL.US",
-                "query_type": 2,
-                "date_request": {"start_date": "20240501", "end_date": "20240502"},
+                "start": "2024-05-01",
+                "end": "2024-05-02",
             },
         )
     ]
