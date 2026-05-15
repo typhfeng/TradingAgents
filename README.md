@@ -148,6 +148,22 @@ export OPENROUTER_API_KEY=...      # OpenRouter
 export ALPHA_VANTAGE_API_KEY=...   # Alpha Vantage
 ```
 
+### Optional Data Sources
+
+By default TradingAgents uses `yfinance` for market, fundamental, and news data. You can opt into Longbridge MCP for read-only data tools by changing the vendor configuration:
+
+```python
+from tradingagents.default_config import DEFAULT_CONFIG
+
+config = DEFAULT_CONFIG.copy()
+config["data_vendors"]["core_stock_apis"] = "longbridge_mcp,yfinance"
+config["data_vendors"]["fundamental_data"] = "longbridge_mcp,yfinance"
+config["data_vendors"]["news_data"] = "longbridge_mcp,yfinance"
+config["longbridge_mcp"]["default_market"] = "US"  # AAPL -> AAPL.US
+```
+
+Longbridge MCP is a hosted Streamable HTTP MCP service at `https://openapi.longbridge.com/mcp` and requires MCP OAuth 2.1 authorization in the client/session. See the official setup guide: https://open.longbridge.com/docs/mcp.
+
 For enterprise providers (e.g. Azure OpenAI, AWS Bedrock), copy `.env.enterprise.example` to `.env.enterprise` and fill in your credentials.
 
 For local models, configure Ollama with `llm_provider: "ollama"` in your config.

@@ -40,13 +40,27 @@ DEFAULT_CONFIG = {
     # Data vendor configuration
     # Category-level configuration (default for all tools in category)
     "data_vendors": {
-        "core_stock_apis": "yfinance",       # Options: alpha_vantage, yfinance
+        "core_stock_apis": "yfinance",       # Options: alpha_vantage, yfinance, longbridge_mcp
         "technical_indicators": "yfinance",  # Options: alpha_vantage, yfinance
-        "fundamental_data": "yfinance",      # Options: alpha_vantage, yfinance
-        "news_data": "yfinance",             # Options: alpha_vantage, yfinance
+        "fundamental_data": "yfinance",      # Options: alpha_vantage, yfinance, longbridge_mcp
+        "news_data": "yfinance",             # Options: alpha_vantage, yfinance, longbridge_mcp
     },
     # Tool-level configuration (takes precedence over category-level)
     "tool_vendors": {
         # Example: "get_stock_data": "alpha_vantage",  # Override category default
+    },
+    # Optional Longbridge MCP configuration.
+    # Official docs: https://open.longbridge.com/docs/mcp
+    "longbridge_mcp": {
+        "endpoint": os.getenv("TRADINGAGENTS_LONGBRIDGE_MCP_URL", "https://openapi.longbridge.com/mcp"),
+        # Longbridge MCP uses OAuth 2.1. If your runtime manages OAuth outside
+        # this process, provide a bearer token through the environment.
+        "access_token": os.getenv("TRADINGAGENTS_LONGBRIDGE_MCP_ACCESS_TOKEN"),
+        # Longbridge symbols include region suffixes such as AAPL.US or 700.HK.
+        # Set TRADINGAGENTS_LONGBRIDGE_DEFAULT_MARKET=US to map AAPL -> AAPL.US.
+        "default_market": os.getenv("TRADINGAGENTS_LONGBRIDGE_DEFAULT_MARKET"),
+        "timeout_seconds": float(os.getenv("TRADINGAGENTS_LONGBRIDGE_MCP_TIMEOUT", "30")),
+        "tool_names": {},
+        "tool_arguments": {},
     },
 }
