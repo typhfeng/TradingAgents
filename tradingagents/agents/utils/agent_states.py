@@ -56,6 +56,8 @@ class AgentState(MessagesState):
         str, "Report from the News Researcher of current world affairs"
     ]
     fundamentals_report: Annotated[str, "Report from the Fundamentals Researcher"]
+    leap_report: Annotated[str, "Report from the LEAPS/options-flow Analyst"]
+    data_sources_report: Annotated[str, "Configured data source summary for this run"]
 
     # researcher team discussion step
     investment_debate_state: Annotated[

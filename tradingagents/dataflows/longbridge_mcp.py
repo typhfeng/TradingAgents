@@ -28,6 +28,7 @@ from .config import get_config
 LONG_BRIDGE_MCP_VENDOR = "longbridge_mcp"
 DEFAULT_ENDPOINT = "https://openapi.longbridge.com/mcp"
 CHINA_ENDPOINT = "https://openapi.longbridge.cn/mcp"
+DEFAULT_TOKEN_FILE = "/Volumes/ssd2/tradingagents/cache/longbridge_mcp_oauth.json"
 
 
 class LongbridgeMCPError(RuntimeError):
@@ -106,7 +107,7 @@ def _get_settings() -> LongbridgeMCPSettings:
     oauth_token_file = (
         os.getenv("TRADINGAGENTS_LONGBRIDGE_MCP_TOKEN_FILE")
         or config.get("oauth_token_file")
-        or "/tmp/longbridge_mcp_oauth.json"
+        or DEFAULT_TOKEN_FILE
     )
     oauth_callback_port = int(
         os.getenv("TRADINGAGENTS_LONGBRIDGE_MCP_CALLBACK_PORT", config.get("oauth_callback_port", 8765))
@@ -256,6 +257,9 @@ class _FileTokenStorage:
                 self.client_info = None
 
     def _save(self):
+        directory = os.path.dirname(self.path)
+        if directory:
+            os.makedirs(directory, exist_ok=True)
         data = {
             "tokens": self.tokens.model_dump(mode="json") if self.tokens else None,
             "client_info": self.client_info.model_dump(mode="json") if self.client_info else None,
@@ -528,3 +532,108 @@ def get_insider_transactions(symbol: str) -> str:
     normalized_symbol = _normalize_symbol(symbol, settings.default_market)
     result = _call_configured_tool("insider_transactions", {"symbol": normalized_symbol})
     return _format_raw_result(f"Insider and Executive Data for {normalized_symbol}", result)
+
+
+def _payload_text(value: Any) -> Any:
+    plain = _to_plain_data(value)
+    if isinstance(plain, dict) and plain.get("content"):
+        content = plain["content"]
+        if isinstance(content, list) and content:
+            text = content[0].get("text") if isinstance(content[0], dict) else None
+            if text:
+                return _parse_json_if_possible(text)
+    return plain
+
+
+def get_leap_options_summary(symbol: str, min_expiry: str = "2027-01-01") -> str:
+    """Return a compact Longbridge MCP LEAPS/options-flow summary."""
+    settings = _get_settings()
+    normalized_symbol = _normalize_symbol(symbol, settings.default_market)
+    quote = _payload_text(call_mcp_tool("quote", {"symbols": [normalized_symbol]}))
+    quote_row = quote[0] if isinstance(quote, list) and quote else {}
+    last_done = quote_row.get("last_done")
+    expiries = _payload_text(call_mcp_tool("option_chain_expiry_date_list", {"symbol": normalized_symbol}))
+    expiries = expiries if isinstance(expiries, list) else []
+    leap_expiries = [expiry for expiry in expiries if expiry >= min_expiry]
+    selected_expiry = (leap_expiries[-1:] or expiries[-1:] or [None])[0]
+
+    if not selected_expiry:
+        return f"# LEAPS/options-flow summary for {normalized_symbol}\n\nData source: Longbridge MCP\n\nNo option expiries found."
+
+    chain = _payload_text(call_mcp_tool("option_chain_info_by_date", {"symbol": normalized_symbol, "date": selected_expiry}))
+    chain = chain if isinstance(chain, list) else []
+    try:
+        spot = float(last_done)
+    except (TypeError, ValueError):
+        spot = None
+
+    selected_symbols = []
+    if spot is not None:
+        ranked = []
+        for row in chain:
+            try:
+                ranked.append((abs(float(row["price"]) - spot), float(row["price"]), row))
+            except (KeyError, TypeError, ValueError):
+                continue
+        ranked.sort()
+        for _, _, row in ranked[:2]:
+            selected_symbols.extend([row["call_symbol"], row["put_symbol"]])
+        for threshold in (1.15, 1.35):
+            for _, strike, row in ranked:
+                if strike >= spot * threshold:
+                    selected_symbols.extend([row["call_symbol"], row["put_symbol"]])
+                    break
+
+    selected_symbols = list(dict.fromkeys(selected_symbols))
+    option_quotes = _payload_text(call_mcp_tool("option_quote", {"symbols": selected_symbols})) if selected_symbols else []
+    option_quotes = option_quotes if isinstance(option_quotes, list) else []
+    calc = _payload_text(call_mcp_tool(
+        "calc_indexes",
+        {
+            "symbols": selected_symbols,
+            "indexes": [
+                "LastDone",
+                "ChangeRate",
+                "Volume",
+                "OpenInterest",
+                "ImpliedVolatility",
+                "Delta",
+                "Premium",
+                "StrikePrice",
+                "ExpiryDate",
+            ],
+        },
+    )) if selected_symbols else []
+    calc = calc if isinstance(calc, list) else []
+    calc_by_symbol = {row.get("symbol"): row for row in calc if isinstance(row, dict)}
+
+    lines = [
+        f"# LEAPS/options-flow summary for {normalized_symbol}",
+        "",
+        "Data source: Longbridge MCP",
+        f"Spot/last_done: {last_done}",
+        f"Selected LEAPS expiry: {selected_expiry}",
+        "",
+        "| Contract | Type | Strike | Last | Volume | OI | IV | Delta | Premium % | Change % |",
+        "|---|---|---:|---:|---:|---:|---:|---:|---:|---:|",
+    ]
+    for row in option_quotes:
+        symbol_key = row.get("symbol")
+        c = calc_by_symbol.get(symbol_key, {})
+        lines.append(
+            "| {symbol} | {direction} | {strike} | {last} | {volume} | {oi} | {iv} | {delta} | {premium} | {change} |".format(
+                symbol=symbol_key,
+                direction=row.get("direction", ""),
+                strike=row.get("strike_price", c.get("strike_price", "")),
+                last=row.get("last_done", c.get("last_done", "")),
+                volume=row.get("volume", c.get("volume", "")),
+                oi=row.get("open_interest", c.get("open_interest", "")),
+                iv=row.get("implied_volatility", c.get("implied_volatility", "")),
+                delta=c.get("delta", ""),
+                premium=c.get("premium", ""),
+                change=c.get("change_rate", ""),
+            )
+        )
+    lines.append("")
+    lines.append("Data limitations: Longbridge MCP option quotes provide OI, volume, IV, and greeks for selected contracts, but this summary does not prove opening vs closing trades or next-day OI change.")
+    return "\n".join(lines)

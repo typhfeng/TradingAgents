@@ -23,12 +23,13 @@ from tradingagents.graph.trading_graph import TradingAgentsGraph
 load_dotenv()
 load_dotenv(".env.enterprise", override=False)
 
-ANALYSTS = ("market", "social", "news", "fundamentals")
+ANALYSTS = ("market", "social", "news", "fundamentals", "leap")
 ANALYST_LABELS = {
     "market": "市场分析",
     "social": "社交情绪",
     "news": "新闻分析",
     "fundamentals": "基本面分析",
+    "leap": "LEAPS/期权流",
 }
 STATUS_LABELS = {
     "queued": "排队中",
@@ -192,6 +193,8 @@ def infer_request_params(request_text: str, today: str | None = None) -> dict[st
             requested_analysts.append("news")
         if "fundamental" in lower or any(word in text for word in ("基本面", "财报", "估值")):
             requested_analysts.append("fundamentals")
+        if "leap" in lower or "option" in lower or any(word in text for word in ("期权", "leaps", "期权流")):
+            requested_analysts.append("leap")
         if requested_analysts:
             updates["analysts"] = [a for a in ANALYSTS if a in requested_analysts]
 
@@ -318,6 +321,8 @@ def render_markdown_report(ticker: str, analysis_date: str, final_state: dict[st
         ("sentiment_report", "社交情绪"),
         ("news_report", "新闻分析"),
         ("fundamentals_report", "基本面分析"),
+        ("leap_report", "LEAPS/期权流分析"),
+        ("data_sources_report", "数据来源"),
         ("investment_plan", "研究团队决策"),
         ("trader_investment_plan", "交易计划"),
         ("final_trade_decision", "投资组合经理决策"),

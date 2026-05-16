@@ -60,7 +60,10 @@ DEFAULT_CONFIG = {
         # Set TRADINGAGENTS_LONGBRIDGE_DEFAULT_MARKET=US to map AAPL -> AAPL.US.
         "default_market": os.getenv("TRADINGAGENTS_LONGBRIDGE_DEFAULT_MARKET"),
         "timeout_seconds": float(os.getenv("TRADINGAGENTS_LONGBRIDGE_MCP_TIMEOUT", "30")),
-        "oauth_token_file": os.getenv("TRADINGAGENTS_LONGBRIDGE_MCP_TOKEN_FILE", "/tmp/longbridge_mcp_oauth.json"),
+        "oauth_token_file": os.getenv(
+            "TRADINGAGENTS_LONGBRIDGE_MCP_TOKEN_FILE",
+            os.path.join(_TRADINGAGENTS_CACHE_DIR, "longbridge_mcp_oauth.json"),
+        ),
         "oauth_callback_port": int(os.getenv("TRADINGAGENTS_LONGBRIDGE_MCP_CALLBACK_PORT", "8765")),
         "tool_names": {},
         "tool_arguments": {},

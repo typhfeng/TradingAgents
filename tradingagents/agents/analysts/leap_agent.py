@@ -6,8 +6,10 @@ from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 
 from tradingagents.agents.utils.agent_utils import (
     build_instrument_context,
+    get_leap_options_summary,
     get_language_instruction,
 )
+from tradingagents.dataflows.longbridge_mcp import get_leap_options_summary as fetch_leap_options_summary
 
 
 LEAP_ANALYSIS_FRAMEWORK = """
@@ -208,11 +210,14 @@ def create_leap_agent(llm):
 
     def leap_agent_node(state):
         current_date = state["trade_date"]
-        instrument_context = build_instrument_context(state["company_of_interest"])
+        company = state["company_of_interest"]
+        instrument_context = build_instrument_context(company)
+        options_summary = fetch_leap_options_summary(company)
 
         system_message = (
             LEAP_ANALYSIS_FRAMEWORK
             + "\nWrite a detailed but disciplined LEAPS/options-flow report. "
+            + "Use the supplied Longbridge MCP options summary and cite its data source. "
             + "If exact option-chain data is unavailable, identify the missing fields "
             + "and explain how each missing field would change the conclusion. "
             + "Do not issue a final BUY/HOLD/SELL by yourself; provide evidence for "
@@ -228,7 +233,8 @@ def create_leap_agent(llm):
                     "assistants. Your specialty is LEAPS and options-flow reasoning.\n"
                     "{system_message}\n"
                     "For your reference, the current date is {current_date}. "
-                    "{instrument_context}",
+                    "{instrument_context}\n\n"
+                    "Longbridge MCP options summary:\n{options_summary}",
                 ),
                 MessagesPlaceholder(variable_name="messages"),
             ]
@@ -237,6 +243,7 @@ def create_leap_agent(llm):
         prompt = prompt.partial(system_message=system_message)
         prompt = prompt.partial(current_date=current_date)
         prompt = prompt.partial(instrument_context=instrument_context)
+        prompt = prompt.partial(options_summary=options_summary)
 
         chain = prompt | llm
         result = chain.invoke(state["messages"])

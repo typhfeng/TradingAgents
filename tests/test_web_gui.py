@@ -36,7 +36,7 @@ def test_infer_request_params_handles_yesterday_and_all_analysts():
 
     assert params["ticker"] == "AAPL"
     assert params["analysis_date"] == "2026-05-04"
-    assert params["analysts"] == ["market", "social", "news", "fundamentals"]
+    assert params["analysts"] == ["market", "social", "news", "fundamentals", "leap"]
     assert params["output_language"] == "English"
     assert params["research_depth"] == 5
 

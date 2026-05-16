@@ -50,6 +50,8 @@ class Propagator:
             ),
             "market_report": "",
             "fundamentals_report": "",
+            "leap_report": "",
+            "data_sources_report": "",
             "sentiment_report": "",
             "news_report": "",
         }

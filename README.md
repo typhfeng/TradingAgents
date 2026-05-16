@@ -164,6 +164,8 @@ config["longbridge_mcp"]["default_market"] = "US"  # AAPL -> AAPL.US
 
 Longbridge MCP is a hosted Streamable HTTP MCP service at `https://openapi.longbridge.com/mcp` and requires MCP OAuth 2.1 authorization in the client/session. See the official setup guide: https://open.longbridge.com/docs/mcp.
 
+TradingAgents stores Longbridge MCP OAuth client tokens under `/Volumes/ssd2/tradingagents/cache/longbridge_mcp_oauth.json` by default. Override with `TRADINGAGENTS_LONGBRIDGE_MCP_TOKEN_FILE` if you need a different cache location.
+
 For enterprise providers (e.g. Azure OpenAI, AWS Bedrock), copy `.env.enterprise.example` to `.env.enterprise` and fill in your credentials.
 
 For local models, configure Ollama with `llm_provider: "ollama"` in your config.
@@ -257,7 +259,7 @@ Override the path with `TRADINGAGENTS_MEMORY_LOG_PATH`.
 
 Checkpoint resume is opt-in via `--checkpoint`. When enabled, LangGraph saves state after each node so a crashed or interrupted run resumes from the last successful step instead of starting over. On a resume run you will see `Resuming from step N for <TICKER> on <date>` in the logs; on a new run you will see `Starting fresh`. Checkpoints are cleared automatically on successful completion.
 
-Per-ticker SQLite databases live at `/Volumes/ssd2/tradingagents/cache/checkpoints/<TICKER>.db` (override the base with `TRADINGAGENTS_CACHE_DIR`). Run outputs live under `/Volumes/ssd2/tradingagents/logs` (override with `TRADINGAGENTS_RESULTS_DIR`). Use `--clear-checkpoints` to reset all of them before a run.
+Per-ticker SQLite databases live at `/Volumes/ssd2/tradingagents/cache/checkpoints/<TICKER>.db` (override the base with `TRADINGAGENTS_CACHE_DIR`). Run outputs and saved reports live under `/Volumes/ssd2/tradingagents/logs` (override with `TRADINGAGENTS_RESULTS_DIR`). Use `--clear-checkpoints` to reset all of them before a run.
 
 ```bash
 tradingagents analyze --checkpoint           # enable for this run

@@ -129,6 +129,29 @@ VENDOR_METHODS = {
     },
 }
 
+def describe_data_sources() -> str:
+    """Return a human-readable summary of configured data vendors."""
+    config = get_config()
+    data_vendors = config.get("data_vendors", {})
+    tool_vendors = config.get("tool_vendors", {})
+    lines = ["# Data Sources"]
+    for category in TOOLS_CATEGORIES:
+        vendor = data_vendors.get(category, "default")
+        lines.append(f"- {category}: {vendor}")
+    if tool_vendors:
+        lines.append("- tool overrides:")
+        for method, vendor in sorted(tool_vendors.items()):
+            lines.append(f"  - {method}: {vendor}")
+    if any("longbridge_mcp" in str(v) for v in list(data_vendors.values()) + list(tool_vendors.values())):
+        lb_config = config.get("longbridge_mcp", {})
+        endpoint = lb_config.get("endpoint", "https://openapi.longbridge.com/mcp")
+        token_file = lb_config.get("oauth_token_file")
+        lines.append(f"- longbridge_mcp endpoint: {endpoint}")
+        if token_file:
+            lines.append(f"- longbridge_mcp oauth_token_file: {token_file}")
+        lines.append("- longbridge_mcp evidence: Longbridge MCP responses include 'Data source: Longbridge MCP' in formatted stock data headers.")
+    return "\n".join(lines)
+
 def get_category_for_method(method: str) -> str:
     """Get the category that contains the specified method."""
     for category, info in TOOLS_CATEGORIES.items():

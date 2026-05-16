@@ -24,6 +24,8 @@ def _reset_longbridge_config(monkeypatch):
                 "access_token": None,
                 "default_market": None,
                 "timeout_seconds": 30,
+                "oauth_token_file": longbridge_mcp.DEFAULT_TOKEN_FILE,
+                "oauth_callback_port": 8765,
                 "tool_names": {},
                 "tool_arguments": {},
             },
@@ -74,14 +76,13 @@ def test_stock_data_maps_dates_and_default_market(monkeypatch):
 
     assert calls == [
         (
-            "history_candlesticks_by_date",
+            "candlesticks",
             {
                 "period": "day",
+                "count": 1000,
                 "forward_adjust": True,
                 "trade_sessions": "intraday",
                 "symbol": "AAPL.US",
-                "start": "2024-05-01",
-                "end": "2024-05-02",
             },
         )
     ]

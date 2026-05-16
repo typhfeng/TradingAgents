@@ -28,6 +28,10 @@ def test_default_cache_and_logs_paths(monkeypatch):
         default_config.DEFAULT_CONFIG["memory_log_path"]
         == "/Volumes/ssd2/tradingagents/logs/memory/trading_memory.md"
     )
+    assert (
+        default_config.DEFAULT_CONFIG["longbridge_mcp"]["oauth_token_file"]
+        == "/Volumes/ssd2/tradingagents/cache/longbridge_mcp_oauth.json"
+    )
 
 
 def test_default_paths_still_allow_environment_overrides(monkeypatch):
