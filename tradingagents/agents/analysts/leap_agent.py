@@ -9,7 +9,10 @@ from tradingagents.agents.utils.agent_utils import (
     get_leap_options_summary,
     get_language_instruction,
 )
-from tradingagents.dataflows.longbridge_mcp import get_leap_options_summary as fetch_leap_options_summary
+from tradingagents.dataflows.longbridge_mcp import (
+    LongbridgeMCPError,
+    get_leap_options_summary as fetch_leap_options_summary,
+)
 
 
 LEAP_ANALYSIS_FRAMEWORK = """
@@ -205,6 +208,28 @@ def evaluate_leap_signal(metrics: Mapping[str, Any]) -> Dict[str, Any]:
     }
 
 
+def _fallback_options_summary(symbol: str, exc: Exception) -> str:
+    return (
+        f"# LEAPS/options-flow summary for {symbol}\n\n"
+        "Data source: Longbridge MCP unavailable\n\n"
+        f"Unavailable reason: {exc}\n\n"
+        "Missing fields: option expiry, strike ladder, open interest, volume, "
+        "implied volatility, delta, premium, and next-day OI confirmation.\n\n"
+        "Interpretation guidance: treat the LEAPS signal as insufficient evidence "
+        "until option-chain access is restored."
+    )
+
+
+def _load_options_summary(symbol: str) -> str:
+    try:
+        return fetch_leap_options_summary(symbol)
+    except LongbridgeMCPError as exc:
+        # Degrade gracefully when Longbridge MCP support is unavailable so the
+        # full research graph can still complete and the LEAP analyst can
+        # document the data gap explicitly in its report.
+        return _fallback_options_summary(symbol, exc)
+
+
 def create_leap_agent(llm):
     """Create a standalone LEAPS/options-flow analyst node."""
 
@@ -212,7 +237,7 @@ def create_leap_agent(llm):
         current_date = state["trade_date"]
         company = state["company_of_interest"]
         instrument_context = build_instrument_context(company)
-        options_summary = fetch_leap_options_summary(company)
+        options_summary = _load_options_summary(company)
 
         system_message = (
             LEAP_ANALYSIS_FRAMEWORK

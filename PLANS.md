@@ -1,3 +1,34 @@
+# Weekly TradingAgents Deep Rebalance Automation Plan
+
+## Goal
+
+Run a weekly deep TradingAgents rebalance across the fixed ticker universe, save full per-ticker reports, verify required analyst artifacts, and generate a dated target-allocation markdown summary for operational use.
+
+## Phases
+
+1. Add a minimal non-interactive batch runner that reuses `TradingAgentsGraph` and `save_report_to_disk`.
+2. Smoke-test one ticker end-to-end with the required analyst set and data-vendor preferences.
+3. Run the full universe while isolating failures per ticker.
+4. Verify saved report artifacts, summarize ratings/data-source adoption, and write the dated allocation document.
+
+## Validation Per Phase
+
+- Batch runner builds and imports cleanly.
+- Single-ticker smoke run produces `1_analysts/leap.md` and `1_analysts/data_sources.md`.
+- Full batch completes with per-ticker status captured even when individual names fail.
+- Allocation markdown includes 100% total target weight, zero-weight names, implementation notes, and absolute report paths.
+
+## Risks
+
+- Longbridge MCP may require fresh OAuth or may partially fall back to yfinance.
+- Full-universe LLM runtime can be long; failures must not abort the whole batch.
+- Final report prose is model-generated, so rating and execution-note extraction must tolerate markdown variation.
+
+## Decision Points
+
+- Reuse existing report-save behavior rather than extending the interactive CLI.
+- Prefer a standalone script so the Friday automation can be invoked directly and non-interactively.
+
 # Longbridge MCP Data Source Plan
 
 ## Problem
