@@ -13,6 +13,10 @@ DEFAULT_CONFIG = {
     # the oldest resolved entries are pruned once this limit is exceeded.
     # Pending entries are never pruned. None disables rotation entirely.
     "memory_log_max_entries": None,
+    # Whether to resolve pending memory-log outcomes before each run.
+    # This touches Yahoo/SPY history and can be disabled for batch jobs that
+    # should prioritize forward analysis over retrospective bookkeeping.
+    "resolve_memory_outcomes": os.getenv("TRADINGAGENTS_RESOLVE_MEMORY_OUTCOMES", "true").lower() == "true",
     # LLM settings
     "llm_provider": "openai",
     "deep_think_llm": "gpt-5.4",
@@ -23,6 +27,10 @@ DEFAULT_CONFIG = {
     # provider-specific URL here would leak (e.g. OpenAI's /v1 was previously
     # being forwarded to Gemini, producing malformed request URLs).
     "backend_url": None,
+    # LLM transport safeguards. Without an explicit timeout, upstream SDK calls
+    # can block indefinitely on a half-closed TLS socket.
+    "llm_timeout": float(os.getenv("TRADINGAGENTS_LLM_TIMEOUT", "180")),
+    "llm_max_retries": int(os.getenv("TRADINGAGENTS_LLM_MAX_RETRIES", "2")),
     # Provider-specific thinking configuration
     "google_thinking_level": None,      # "high", "minimal", etc.
     "openai_reasoning_effort": None,    # "medium", "high", "low"
@@ -38,6 +46,7 @@ DEFAULT_CONFIG = {
     "max_risk_discuss_rounds": 1,
     "max_recur_limit": 100,
     # Data vendor configuration
+    "yfinance_timeout": float(os.getenv("TRADINGAGENTS_YFINANCE_TIMEOUT", "30")),
     # Category-level configuration (default for all tools in category)
     "data_vendors": {
         "core_stock_apis": "yfinance",       # Options: alpha_vantage, yfinance, longbridge_mcp

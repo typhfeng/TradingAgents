@@ -1,0 +1,19 @@
+[
+  {
+    "ticker": "NVDA",
+    "rating": "Overweight",
+    "report_file": "/Volumes/ssd2/tradingagents/logs/reports/NVDA/2026-05-29_20260601_213626/complete_report.md",
+    "errors": [],
+    "verified_files": {
+      "1_analysts/leap.md": true,
+      "1_analysts/data_sources.md": true
+    },
+    "longbridge_mentions": {
+      "market": false,
+      "news": false,
+      "fundamentals": false,
+      "leap": true,
+      "data_sources": true
+    }
+  }
+]

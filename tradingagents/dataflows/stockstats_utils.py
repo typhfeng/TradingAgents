@@ -13,6 +13,11 @@ from .utils import safe_ticker_component
 logger = logging.getLogger(__name__)
 
 
+def get_yfinance_timeout() -> float:
+    config = get_config()
+    return float(config.get("yfinance_timeout", 30))
+
+
 def yf_retry(func, max_retries=3, base_delay=2.0):
     """Execute a yfinance call with exponential backoff on rate limits.
 
@@ -81,6 +86,7 @@ def load_ohlcv(symbol: str, curr_date: str) -> pd.DataFrame:
             multi_level_index=False,
             progress=False,
             auto_adjust=True,
+            timeout=get_yfinance_timeout(),
         ))
         data = data.reset_index()
         data.to_csv(data_file, index=False, encoding="utf-8")

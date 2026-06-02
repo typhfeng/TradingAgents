@@ -45,3 +45,26 @@ def test_default_paths_still_allow_environment_overrides(monkeypatch):
     assert default_config.DEFAULT_CONFIG["data_cache_dir"] == "/tmp/ta-cache"
     assert default_config.DEFAULT_CONFIG["results_dir"] == "/tmp/ta-logs"
     assert default_config.DEFAULT_CONFIG["memory_log_path"] == "/tmp/ta-memory.md"
+
+
+def test_llm_transport_defaults_and_overrides(monkeypatch):
+    monkeypatch.delenv("TRADINGAGENTS_LLM_TIMEOUT", raising=False)
+    monkeypatch.delenv("TRADINGAGENTS_LLM_MAX_RETRIES", raising=False)
+    monkeypatch.delenv("TRADINGAGENTS_RESOLVE_MEMORY_OUTCOMES", raising=False)
+
+    import tradingagents.default_config as default_config
+
+    default_config = importlib.reload(default_config)
+    assert default_config.DEFAULT_CONFIG["llm_timeout"] == 180.0
+    assert default_config.DEFAULT_CONFIG["llm_max_retries"] == 2
+    assert default_config.DEFAULT_CONFIG["resolve_memory_outcomes"] is True
+
+    monkeypatch.setenv("TRADINGAGENTS_LLM_TIMEOUT", "45")
+    monkeypatch.setenv("TRADINGAGENTS_LLM_MAX_RETRIES", "5")
+    monkeypatch.setenv("TRADINGAGENTS_YFINANCE_TIMEOUT", "12")
+    monkeypatch.setenv("TRADINGAGENTS_RESOLVE_MEMORY_OUTCOMES", "false")
+    default_config = importlib.reload(default_config)
+    assert default_config.DEFAULT_CONFIG["llm_timeout"] == 45.0
+    assert default_config.DEFAULT_CONFIG["llm_max_retries"] == 5
+    assert default_config.DEFAULT_CONFIG["yfinance_timeout"] == 12.0
+    assert default_config.DEFAULT_CONFIG["resolve_memory_outcomes"] is False

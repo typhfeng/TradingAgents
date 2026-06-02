@@ -4,6 +4,7 @@ import yfinance as yf
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
 
+from .config import get_config
 from .stockstats_utils import yf_retry
 
 
@@ -65,6 +66,7 @@ def get_news_yfinance(
         Formatted string containing news articles
     """
     try:
+        timeout = float(get_config().get("yfinance_timeout", 30))
         stock = yf.Ticker(ticker)
         news = yf_retry(lambda: stock.get_news(count=20))
 
@@ -137,6 +139,7 @@ def get_global_news_yfinance(
                 query=q,
                 news_count=limit,
                 enable_fuzzy_query=True,
+                timeout=timeout,
             ))
 
             if search.news:

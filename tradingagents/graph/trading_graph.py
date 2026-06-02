@@ -135,6 +135,14 @@ class TradingAgentsGraph:
     def _get_provider_kwargs(self) -> Dict[str, Any]:
         """Get provider-specific kwargs for LLM client creation."""
         kwargs = {}
+        timeout = self.config.get("llm_timeout")
+        if timeout is not None:
+            kwargs["timeout"] = timeout
+
+        max_retries = self.config.get("llm_max_retries")
+        if max_retries is not None:
+            kwargs["max_retries"] = max_retries
+
         provider = self.config.get("llm_provider", "").lower()
 
         if provider == "google":
@@ -208,9 +216,10 @@ class TradingAgentsGraph:
             start = datetime.strptime(trade_date, "%Y-%m-%d")
             end = start + timedelta(days=holding_days + 7)  # buffer for weekends/holidays
             end_str = end.strftime("%Y-%m-%d")
+            timeout = self.config.get("yfinance_timeout", 30)
 
-            stock = yf.Ticker(ticker).history(start=trade_date, end=end_str)
-            spy = yf.Ticker("SPY").history(start=trade_date, end=end_str)
+            stock = yf.Ticker(ticker).history(start=trade_date, end=end_str, timeout=timeout)
+            spy = yf.Ticker("SPY").history(start=trade_date, end=end_str, timeout=timeout)
 
             if len(stock) < 2 or len(spy) < 2:
                 return None, None, None
@@ -278,8 +287,10 @@ class TradingAgentsGraph:
         """
         self.ticker = company_name
 
-        # Resolve any pending memory-log entries for this ticker before the pipeline runs.
-        self._resolve_pending_entries(company_name)
+        # Resolve any pending memory-log entries for this ticker before the
+        # pipeline runs unless the caller explicitly disables that preflight.
+        if self.config.get("resolve_memory_outcomes", True):
+            self._resolve_pending_entries(company_name)
 
         # Recompile with a checkpointer if the user opted in.
         if self.config.get("checkpoint_enabled"):

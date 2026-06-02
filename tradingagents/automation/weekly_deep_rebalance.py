@@ -4,6 +4,7 @@ import argparse
 import copy
 import datetime as dt
 import json
+import multiprocessing as mp
 import re
 import traceback
 from dataclasses import dataclass, field
@@ -11,9 +12,14 @@ from pathlib import Path
 from typing import Iterable
 from zoneinfo import ZoneInfo
 
+from dotenv import load_dotenv
+
 from tradingagents.agents.utils.rating import parse_rating
 from tradingagents.default_config import DEFAULT_CONFIG
 from tradingagents.graph.trading_graph import TradingAgentsGraph
+
+load_dotenv()
+load_dotenv(".env.enterprise", override=False)
 
 TICKER_UNIVERSE = [
     "NVDA", "AAPL", "MSFT", "AMZN", "MU", "GOOGL", "TSLA", "GOOG", "AMD",
@@ -29,6 +35,7 @@ RATING_SCORES = {"Buy": 2, "Overweight": 1}
 REPORTS_ROOT = Path("/Volumes/ssd2/tradingagents/logs/reports")
 OUTPUT_ROOT = Path("/Volumes/ssd2/tradingagents/output")
 LOS_ANGELES = ZoneInfo("America/Los_Angeles")
+DEFAULT_PER_TICKER_TIMEOUT_SECONDS = 900
 
 
 @dataclass
@@ -59,6 +66,7 @@ def build_weekly_config() -> dict:
     config["data_vendors"]["fundamental_data"] = "longbridge_mcp,yfinance"
     config["data_vendors"]["news_data"] = "longbridge_mcp,yfinance"
     config["data_vendors"]["technical_indicators"] = "yfinance"
+    config["resolve_memory_outcomes"] = False
     config["longbridge_mcp"]["default_market"] = (
         config["longbridge_mcp"].get("default_market") or "US"
     )
@@ -197,6 +205,33 @@ def verify_required_files(run_dir: Path) -> dict[str, bool]:
     }
 
 
+def resolve_default_analysis_date(now: dt.datetime | None = None) -> str:
+    """Default to the most recent Friday in Los Angeles time.
+
+    The weekly automation is intended to run after the US Friday market close.
+    When invoked manually on other days, using "today" produces misleading dates
+    such as Saturday/Sunday/Monday. This helper keeps the batch anchored to the
+    latest intended weekly analysis date.
+    """
+    now = now.astimezone(LOS_ANGELES) if now else dt.datetime.now(LOS_ANGELES)
+    days_since_friday = (now.weekday() - 4) % 7
+    return (now.date() - dt.timedelta(days=days_since_friday)).isoformat()
+
+
+def count_leap_chain_unavailable(results: Iterable[TickerRunResult]) -> int:
+    count = 0
+    for result in results:
+        run_dir = result.run_dir
+        if not run_dir:
+            continue
+        leap_path = run_dir / "1_analysts" / "leap.md"
+        if not leap_path.exists():
+            continue
+        if "No option expiries found." in leap_path.read_text(encoding="utf-8"):
+            count += 1
+    return count
+
+
 def compute_target_weights(results: Iterable[TickerRunResult]) -> dict[str, float]:
     results_by_ticker = {result.ticker: result for result in results}
     eligible: list[TickerRunResult] = [
@@ -255,12 +290,8 @@ def build_allocation_markdown(
     longbridge_configured = sum(
         result.longbridge_mentions.get("data_sources", False) for result in results
     )
-    longbridge_market = sum(result.longbridge_mentions.get("market", False) for result in results)
-    longbridge_news = sum(result.longbridge_mentions.get("news", False) for result in results)
-    longbridge_fundamentals = sum(
-        result.longbridge_mentions.get("fundamentals", False) for result in results
-    )
     longbridge_leap = sum(result.longbridge_mentions.get("leap", False) for result in results)
+    leap_chain_unavailable = count_leap_chain_unavailable(results)
 
     error_lines = []
     for result in results:
@@ -282,14 +313,14 @@ def build_allocation_markdown(
         "- 若 `GOOGL` 与 `GOOG` 同时为正向评级，仅保留 `GOOGL` 的经济敞口，`GOOG` 记为 0%。",
         "",
         "## Longbridge MCP Adoption",
-        f"- 目标 ticker 数: {total_reports}",
+        f"- 报告检查数: {total_reports}",
         f"- 已生成报告: {generated_reports}/{total_reports}",
-        f"- 关键文件校验通过: {verified_reports}/{generated_reports if generated_reports else 0}",
-        f"- `data_sources.md` 中出现 Longbridge MCP: {longbridge_configured}/{total_reports}",
-        f"- 市场报告出现 Longbridge 证据: {longbridge_market}/{total_reports}",
-        f"- 新闻报告出现 Longbridge 证据: {longbridge_news}/{total_reports}",
-        f"- 基本面报告出现 Longbridge 证据: {longbridge_fundamentals}/{total_reports}",
-        f"- LEAP 报告出现 Longbridge 证据: {longbridge_leap}/{total_reports}",
+        f"- `leap.md` 与 `data_sources.md` 校验通过: {verified_reports}/{generated_reports if generated_reports else 0}",
+        f"- `data_sources.md` 包含 Longbridge MCP 配置: {longbridge_configured}/{generated_reports if generated_reports else 0}",
+        f"- `leap.md` 显式引用 Longbridge MCP: {longbridge_leap}/{generated_reports if generated_reports else 0}",
+        f"- LEAPS 链不可用（`No option expiries found.`）: {leap_chain_unavailable}/{generated_reports if generated_reports else 0}",
+        "- 重要限制: analyst markdown 不保留逐次 market/news/fundamentals 工具调用的 vendor provenance，",
+        "  因此不能把这些章节里未出现 `Longbridge MCP` 文本解读为“没有使用 Longbridge”。",
         "",
         "## Target Weights",
         "| Ticker | Rating | Target Weight | Key Execution Notes | Report Path |",
@@ -339,6 +370,20 @@ def run_single_ticker(
 ) -> TickerRunResult:
     timestamp = dt.datetime.now(LOS_ANGELES).strftime("%Y%m%d_%H%M%S")
     run_dir = reports_root / ticker / f"{analysis_date}_{timestamp}"
+    return run_single_ticker_at_dir(
+        ticker=ticker,
+        analysis_date=analysis_date,
+        config=config,
+        run_dir=run_dir,
+    )
+
+
+def run_single_ticker_at_dir(
+    ticker: str,
+    analysis_date: str,
+    config: dict,
+    run_dir: Path,
+) -> TickerRunResult:
     result = TickerRunResult(ticker=ticker, analysis_date=analysis_date, run_dir=run_dir)
     try:
         graph = TradingAgentsGraph(
@@ -366,17 +411,152 @@ def run_single_ticker(
         return result
 
 
+def _run_single_ticker_worker(
+    queue: mp.queues.Queue,
+    ticker: str,
+    analysis_date: str,
+    config: dict,
+    run_dir: str,
+) -> None:
+    result = run_single_ticker_at_dir(
+        ticker=ticker,
+        analysis_date=analysis_date,
+        config=config,
+        run_dir=Path(run_dir),
+    )
+    queue.put(
+        {
+            "ticker": result.ticker,
+            "analysis_date": result.analysis_date,
+            "run_dir": str(result.run_dir) if result.run_dir else None,
+            "report_file": str(result.report_file) if result.report_file else None,
+            "rating": result.rating,
+            "decision_markdown": result.decision_markdown,
+            "executive_summary": result.executive_summary,
+            "implementation_notes": result.implementation_notes,
+            "longbridge_mentions": result.longbridge_mentions,
+            "verified_files": result.verified_files,
+            "errors": result.errors,
+        }
+    )
+
+
+def _load_result_from_disk(
+    ticker: str,
+    analysis_date: str,
+    run_dir: Path,
+) -> TickerRunResult | None:
+    report_file = run_dir / "complete_report.md"
+    decision_file = run_dir / "5_portfolio" / "decision.md"
+    if not report_file.exists():
+        return None
+
+    decision_markdown = decision_file.read_text(encoding="utf-8") if decision_file.exists() else ""
+    result = TickerRunResult(
+        ticker=ticker,
+        analysis_date=analysis_date,
+        run_dir=run_dir,
+        report_file=report_file,
+        decision_markdown=decision_markdown,
+        rating=parse_rating(decision_markdown),
+        executive_summary=extract_markdown_section(decision_markdown, "Executive Summary"),
+        implementation_notes=extract_markdown_section(decision_markdown, "Investment Thesis"),
+        verified_files=verify_required_files(run_dir),
+        longbridge_mentions=summarize_longbridge_mentions(run_dir),
+    )
+    missing = [path for path, exists in result.verified_files.items() if not exists]
+    if missing:
+        result.errors.append(f"missing required files: {', '.join(missing)}")
+    return result
+
+
+def run_single_ticker_isolated(
+    ticker: str,
+    analysis_date: str,
+    config: dict,
+    reports_root: Path,
+    timeout_seconds: int,
+) -> TickerRunResult:
+    timestamp = dt.datetime.now(LOS_ANGELES).strftime("%Y%m%d_%H%M%S")
+    run_dir = reports_root / ticker / f"{analysis_date}_{timestamp}"
+    ctx = mp.get_context("spawn")
+    queue = ctx.Queue()
+    process = ctx.Process(
+        target=_run_single_ticker_worker,
+        args=(queue, ticker, analysis_date, config, str(run_dir)),
+    )
+    process.start()
+    process.join(timeout_seconds)
+
+    if process.is_alive():
+        process.terminate()
+        process.join(10)
+        recovered = _load_result_from_disk(ticker, analysis_date, run_dir)
+        if recovered is not None:
+            return recovered
+        return TickerRunResult(
+            ticker=ticker,
+            analysis_date=analysis_date,
+            run_dir=run_dir,
+            errors=[f"TimeoutError: exceeded {timeout_seconds}s per-ticker limit"],
+        )
+
+    if process.exitcode not in (0, None):
+        recovered = _load_result_from_disk(ticker, analysis_date, run_dir)
+        if recovered is not None:
+            return recovered
+        return TickerRunResult(
+            ticker=ticker,
+            analysis_date=analysis_date,
+            run_dir=run_dir,
+            errors=[f"ChildProcessError: worker exited with code {process.exitcode}"],
+        )
+
+    if queue.empty():
+        recovered = _load_result_from_disk(ticker, analysis_date, run_dir)
+        if recovered is not None:
+            return recovered
+        return TickerRunResult(
+            ticker=ticker,
+            analysis_date=analysis_date,
+            run_dir=run_dir,
+            errors=["ChildProcessError: worker exited without returning a result"],
+        )
+
+    payload = queue.get()
+    return TickerRunResult(
+        ticker=payload["ticker"],
+        analysis_date=payload["analysis_date"],
+        run_dir=Path(payload["run_dir"]) if payload["run_dir"] else None,
+        report_file=Path(payload["report_file"]) if payload["report_file"] else None,
+        rating=payload["rating"],
+        decision_markdown=payload["decision_markdown"],
+        executive_summary=payload["executive_summary"],
+        implementation_notes=payload["implementation_notes"],
+        longbridge_mentions=payload["longbridge_mentions"],
+        verified_files=payload["verified_files"],
+        errors=payload["errors"],
+    )
+
+
 def run_batch(
     tickers: Iterable[str],
     analysis_date: str,
     reports_root: Path = REPORTS_ROOT,
     output_root: Path = OUTPUT_ROOT,
+    per_ticker_timeout_seconds: int = DEFAULT_PER_TICKER_TIMEOUT_SECONDS,
 ) -> tuple[list[TickerRunResult], Path]:
     reports_root.mkdir(parents=True, exist_ok=True)
     output_root.mkdir(parents=True, exist_ok=True)
     config = build_weekly_config()
     results = [
-        run_single_ticker(ticker=ticker, analysis_date=analysis_date, config=copy.deepcopy(config), reports_root=reports_root)
+        run_single_ticker_isolated(
+            ticker=ticker,
+            analysis_date=analysis_date,
+            config=copy.deepcopy(config),
+            reports_root=reports_root,
+            timeout_seconds=per_ticker_timeout_seconds,
+        )
         for ticker in tickers
     ]
     allocation_path = output_root / f"target_allocation_{analysis_date}.md"
@@ -404,9 +584,16 @@ def run_batch(
 
 
 def parse_args() -> argparse.Namespace:
-    today = dt.datetime.now(LOS_ANGELES).date().isoformat()
+    default_analysis_date = resolve_default_analysis_date()
     parser = argparse.ArgumentParser(description="Run the weekly TradingAgents deep rebalance batch.")
-    parser.add_argument("--analysis-date", default=today, help="Analysis date in YYYY-MM-DD.")
+    parser.add_argument(
+        "--analysis-date",
+        default=default_analysis_date,
+        help=(
+            "Analysis date in YYYY-MM-DD. Defaults to the most recent Friday "
+            "in America/Los_Angeles."
+        ),
+    )
     parser.add_argument(
         "--tickers",
         nargs="*",
@@ -415,6 +602,12 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--reports-root", default=str(REPORTS_ROOT))
     parser.add_argument("--output-root", default=str(OUTPUT_ROOT))
+    parser.add_argument(
+        "--per-ticker-timeout-seconds",
+        type=int,
+        default=DEFAULT_PER_TICKER_TIMEOUT_SECONDS,
+        help="Hard parent-process timeout for each ticker worker.",
+    )
     return parser.parse_args()
 
 
@@ -425,6 +618,7 @@ def main() -> int:
         analysis_date=args.analysis_date,
         reports_root=Path(args.reports_root),
         output_root=Path(args.output_root),
+        per_ticker_timeout_seconds=args.per_ticker_timeout_seconds,
     )
     failures = [result for result in results if result.errors]
     print(f"Allocation markdown: {allocation_path}")
