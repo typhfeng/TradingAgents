@@ -62,10 +62,12 @@ def build_weekly_config() -> dict:
     config["output_language"] = "Chinese"
     config["max_debate_rounds"] = 2
     config["max_risk_discuss_rounds"] = 2
-    config["data_vendors"]["core_stock_apis"] = "longbridge_mcp,yfinance"
-    config["data_vendors"]["fundamental_data"] = "longbridge_mcp,yfinance"
-    config["data_vendors"]["news_data"] = "longbridge_mcp,yfinance"
-    config["data_vendors"]["technical_indicators"] = "yfinance"
+    config["data_vendors"]["core_stock_apis"] = "longbridge_mcp"
+    config["data_vendors"]["fundamental_data"] = "longbridge_mcp"
+    config["data_vendors"]["news_data"] = "longbridge_mcp"
+    config["data_vendors"]["technical_indicators"] = "longbridge_mcp"
+    config["disable_yfinance"] = True
+    config["vendor_auto_fallback"] = False
     config["resolve_memory_outcomes"] = False
     config["longbridge_mcp"]["default_market"] = (
         config["longbridge_mcp"].get("default_market") or "US"

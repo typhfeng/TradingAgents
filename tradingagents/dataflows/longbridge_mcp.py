@@ -17,12 +17,14 @@ import subprocess
 import threading
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
 from .config import get_config
+from .stockstats_utils import calculate_indicator_bulk_from_df, parse_ohlcv_csv_text
+from .y_finance import INDICATOR_DESCRIPTIONS
 
 
 LONG_BRIDGE_MCP_VENDOR = "longbridge_mcp"
@@ -478,6 +480,35 @@ def get_stock(
         },
     )
     return _format_candlesticks(normalized_symbol, start_date, end_date, result)
+
+
+def get_indicator(symbol: str, indicator: str, curr_date: str, look_back_days: int) -> str:
+    """Compute stockstats indicators from Longbridge OHLCV data locally."""
+    if indicator not in INDICATOR_DESCRIPTIONS:
+        raise ValueError(
+            f"Indicator {indicator} is not supported. Please choose from: {list(INDICATOR_DESCRIPTIONS.keys())}"
+        )
+
+    end_dt = datetime.strptime(curr_date, "%Y-%m-%d")
+    start_dt = end_dt - timedelta(days=look_back_days)
+    csv_text = get_stock(symbol, start_dt.strftime("%Y-%m-%d"), curr_date)
+    data = parse_ohlcv_csv_text(csv_text)
+    data = data[data["Date"] <= end_dt]
+    indicator_data = calculate_indicator_bulk_from_df(data, indicator)
+
+    current_dt = end_dt
+    lines = []
+    while current_dt >= start_dt:
+        date_str = current_dt.strftime("%Y-%m-%d")
+        lines.append(f"{date_str}: {indicator_data.get(date_str, 'N/A: Not a trading day (weekend or holiday)')}")
+        current_dt -= timedelta(days=1)
+
+    return (
+        f"## {indicator} values from {start_dt.strftime('%Y-%m-%d')} to {curr_date}:\n\n"
+        + "\n".join(lines)
+        + "\n\n"
+        + INDICATOR_DESCRIPTIONS[indicator]
+    )
 
 
 def get_fundamentals(ticker: str, curr_date: str = None) -> str:

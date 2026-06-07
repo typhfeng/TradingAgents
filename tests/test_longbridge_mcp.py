@@ -3,6 +3,7 @@ import pytest
 from tradingagents.dataflows import longbridge_mcp
 from tradingagents.dataflows.config import set_config
 from tradingagents.dataflows.interface import VENDOR_LIST, VENDOR_METHODS, route_to_vendor
+from tradingagents.dataflows.stockstats_utils import YahooFinanceError
 
 
 @pytest.fixture(autouse=True)
@@ -38,6 +39,7 @@ def test_longbridge_vendor_is_registered_for_read_only_data_tools():
     assert "longbridge_mcp" in VENDOR_LIST
     for method in (
         "get_stock_data",
+        "get_indicators",
         "get_fundamentals",
         "get_balance_sheet",
         "get_cashflow",
@@ -118,6 +120,27 @@ def test_news_result_is_formatted(monkeypatch):
 
 
 @pytest.mark.unit
+def test_longbridge_indicator_is_computed_from_stock_csv(monkeypatch):
+    def fake_get_stock(symbol, start_date, end_date):
+        assert symbol == "AAPL"
+        return (
+            "# Stock data for AAPL from 2026-01-01 to 2026-01-05\n"
+            "# Data source: Longbridge MCP\n\n"
+            "Date,Open,High,Low,Close,Volume,Turnover\n"
+            "2026-01-02,100,101,99,100,1000,100000\n"
+            "2026-01-05,102,103,101,102,1200,122400\n"
+        )
+
+    monkeypatch.setattr(longbridge_mcp, "get_stock", fake_get_stock)
+
+    result = longbridge_mcp.get_indicator("AAPL", "close_10_ema", "2026-01-05", 3)
+
+    assert "## close_10_ema values from 2026-01-02 to 2026-01-05" in result
+    assert "2026-01-05:" in result
+    assert "10 EMA:" in result
+
+
+@pytest.mark.unit
 def test_route_to_vendor_uses_longbridge_when_configured(monkeypatch):
     monkeypatch.setitem(
         VENDOR_METHODS["get_stock_data"],
@@ -153,5 +176,40 @@ def test_route_to_vendor_falls_back_after_longbridge_mcp_error(monkeypatch):
 
 
 @pytest.mark.unit
-def test_technical_indicators_do_not_route_to_longbridge():
-    assert "longbridge_mcp" not in VENDOR_METHODS["get_indicators"]
+def test_route_to_vendor_falls_back_after_yahoo_error(monkeypatch):
+    monkeypatch.setitem(
+        VENDOR_METHODS["get_stock_data"],
+        "yfinance",
+        lambda symbol, start_date, end_date: (_ for _ in ()).throw(YahooFinanceError("crumb failed")),
+    )
+    monkeypatch.setitem(
+        VENDOR_METHODS["get_stock_data"],
+        "longbridge_mcp",
+        lambda symbol, start_date, end_date: "fallback-longbridge",
+    )
+    set_config({"data_vendors": {"core_stock_apis": "yfinance,longbridge_mcp"}})
+
+    assert route_to_vendor("get_stock_data", "NVDA", "2026-01-01", "2026-01-31") == "fallback-longbridge"
+
+
+@pytest.mark.unit
+def test_route_to_vendor_can_disable_yahoo_entirely(monkeypatch):
+    monkeypatch.setitem(
+        VENDOR_METHODS["get_stock_data"],
+        "yfinance",
+        lambda symbol, start_date, end_date: "should-not-run",
+    )
+    monkeypatch.setitem(
+        VENDOR_METHODS["get_stock_data"],
+        "longbridge_mcp",
+        lambda symbol, start_date, end_date: "longbridge-only",
+    )
+    set_config(
+        {
+            "data_vendors": {"core_stock_apis": "yfinance,longbridge_mcp"},
+            "disable_yfinance": True,
+            "vendor_auto_fallback": False,
+        }
+    )
+
+    assert route_to_vendor("get_stock_data", "NVDA", "2026-01-01", "2026-01-31") == "longbridge-only"

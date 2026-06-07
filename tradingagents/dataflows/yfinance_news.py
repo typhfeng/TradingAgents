@@ -5,7 +5,7 @@ from datetime import datetime
 from dateutil.relativedelta import relativedelta
 
 from .config import get_config
-from .stockstats_utils import yf_retry
+from .stockstats_utils import YahooFinanceError, yf_retry
 
 
 def _extract_article_data(article: dict) -> dict:
@@ -71,7 +71,7 @@ def get_news_yfinance(
         news = yf_retry(lambda: stock.get_news(count=20))
 
         if not news:
-            return f"No news found for {ticker}"
+            raise YahooFinanceError(f"No Yahoo news found for {ticker}")
 
         # Parse date range for filtering
         start_dt = datetime.strptime(start_date, "%Y-%m-%d")
@@ -98,12 +98,14 @@ def get_news_yfinance(
             filtered_count += 1
 
         if filtered_count == 0:
-            return f"No news found for {ticker} between {start_date} and {end_date}"
+            raise YahooFinanceError(f"No Yahoo news found for {ticker} between {start_date} and {end_date}")
 
         return f"## {ticker} News, from {start_date} to {end_date}:\n\n{news_str}"
 
     except Exception as e:
-        return f"Error fetching news for {ticker}: {str(e)}"
+        if isinstance(e, YahooFinanceError):
+            raise
+        raise YahooFinanceError(f"Yahoo news failed for {ticker}: {e}") from e
 
 
 def get_global_news_yfinance(
@@ -134,6 +136,7 @@ def get_global_news_yfinance(
     seen_titles = set()
 
     try:
+        timeout = float(get_config().get("yfinance_timeout", 30))
         for query in search_queries:
             search = yf_retry(lambda q=query: yf.Search(
                 query=q,
@@ -160,7 +163,7 @@ def get_global_news_yfinance(
                 break
 
         if not all_news:
-            return f"No global news found for {curr_date}"
+            raise YahooFinanceError(f"No Yahoo global news found for {curr_date}")
 
         # Calculate date range
         curr_dt = datetime.strptime(curr_date, "%Y-%m-%d")
@@ -197,4 +200,6 @@ def get_global_news_yfinance(
         return f"## Global Market News, from {start_date} to {curr_date}:\n\n{news_str}"
 
     except Exception as e:
-        return f"Error fetching global news: {str(e)}"
+        if isinstance(e, YahooFinanceError):
+            raise
+        raise YahooFinanceError(f"Yahoo global news failed: {e}") from e

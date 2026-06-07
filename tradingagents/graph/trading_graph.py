@@ -7,8 +7,6 @@ import json
 from datetime import datetime, timedelta
 from typing import Dict, Any, Tuple, List, Optional
 
-import yfinance as yf
-
 logger = logging.getLogger(__name__)
 
 from langgraph.prebuilt import ToolNode
@@ -19,13 +17,14 @@ from tradingagents.agents import *
 from tradingagents.default_config import DEFAULT_CONFIG
 from tradingagents.agents.utils.memory import TradingMemoryLog
 from tradingagents.dataflows.utils import safe_ticker_component
+from tradingagents.dataflows.stockstats_utils import parse_ohlcv_csv_text
 from tradingagents.agents.utils.agent_states import (
     AgentState,
     InvestDebateState,
     RiskDebateState,
 )
 from tradingagents.dataflows.config import set_config
-from tradingagents.dataflows.interface import describe_data_sources
+from tradingagents.dataflows.interface import describe_data_sources, route_to_vendor
 
 # Import the new abstract tool methods from agent_utils
 from tradingagents.agents.utils.agent_utils import (
@@ -216,10 +215,12 @@ class TradingAgentsGraph:
             start = datetime.strptime(trade_date, "%Y-%m-%d")
             end = start + timedelta(days=holding_days + 7)  # buffer for weekends/holidays
             end_str = end.strftime("%Y-%m-%d")
-            timeout = self.config.get("yfinance_timeout", 30)
-
-            stock = yf.Ticker(ticker).history(start=trade_date, end=end_str, timeout=timeout)
-            spy = yf.Ticker("SPY").history(start=trade_date, end=end_str, timeout=timeout)
+            stock = parse_ohlcv_csv_text(
+                route_to_vendor("get_stock_data", ticker, trade_date, end_str)
+            )
+            spy = parse_ohlcv_csv_text(
+                route_to_vendor("get_stock_data", "SPY", trade_date, end_str)
+            )
 
             if len(stock) < 2 or len(spy) < 2:
                 return None, None, None

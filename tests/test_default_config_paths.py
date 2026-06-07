@@ -51,6 +51,8 @@ def test_llm_transport_defaults_and_overrides(monkeypatch):
     monkeypatch.delenv("TRADINGAGENTS_LLM_TIMEOUT", raising=False)
     monkeypatch.delenv("TRADINGAGENTS_LLM_MAX_RETRIES", raising=False)
     monkeypatch.delenv("TRADINGAGENTS_RESOLVE_MEMORY_OUTCOMES", raising=False)
+    monkeypatch.delenv("TRADINGAGENTS_DISABLE_YFINANCE", raising=False)
+    monkeypatch.delenv("TRADINGAGENTS_VENDOR_AUTO_FALLBACK", raising=False)
 
     import tradingagents.default_config as default_config
 
@@ -58,13 +60,19 @@ def test_llm_transport_defaults_and_overrides(monkeypatch):
     assert default_config.DEFAULT_CONFIG["llm_timeout"] == 180.0
     assert default_config.DEFAULT_CONFIG["llm_max_retries"] == 2
     assert default_config.DEFAULT_CONFIG["resolve_memory_outcomes"] is True
+    assert default_config.DEFAULT_CONFIG["disable_yfinance"] is False
+    assert default_config.DEFAULT_CONFIG["vendor_auto_fallback"] is True
 
     monkeypatch.setenv("TRADINGAGENTS_LLM_TIMEOUT", "45")
     monkeypatch.setenv("TRADINGAGENTS_LLM_MAX_RETRIES", "5")
     monkeypatch.setenv("TRADINGAGENTS_YFINANCE_TIMEOUT", "12")
     monkeypatch.setenv("TRADINGAGENTS_RESOLVE_MEMORY_OUTCOMES", "false")
+    monkeypatch.setenv("TRADINGAGENTS_DISABLE_YFINANCE", "true")
+    monkeypatch.setenv("TRADINGAGENTS_VENDOR_AUTO_FALLBACK", "false")
     default_config = importlib.reload(default_config)
     assert default_config.DEFAULT_CONFIG["llm_timeout"] == 45.0
     assert default_config.DEFAULT_CONFIG["llm_max_retries"] == 5
     assert default_config.DEFAULT_CONFIG["yfinance_timeout"] == 12.0
     assert default_config.DEFAULT_CONFIG["resolve_memory_outcomes"] is False
+    assert default_config.DEFAULT_CONFIG["disable_yfinance"] is True
+    assert default_config.DEFAULT_CONFIG["vendor_auto_fallback"] is False

@@ -67,6 +67,19 @@ Add Longbridge MCP support as an optional TradingAgents data vendor without chan
 - Longbridge MCP requires OAuth 2.1 at runtime. The code can call a configured MCP endpoint, but users still need to authorize the MCP client/session according to Longbridge account permissions.
 - MCP tool schemas can evolve; tool names and base arguments are configurable through `longbridge_mcp` config.
 
+## 2026-06-05 Yahoo Removal Follow-up
+
+### Problem
+
+Recent batch runs stall or fail on Yahoo Finance (`Invalid Crumb`, long-lived SSL waits). The current router still allows hidden fallback into `yfinance`, and technical indicators plus memory-return resolution still depend on Yahoo-specific code paths.
+
+### Approach
+
+1. Make Yahoo failures raise a vendor-specific exception so routing can recover cleanly.
+2. Add a Longbridge-backed technical-indicator path by computing stockstats indicators from Longbridge OHLCV CSV output locally.
+3. Move memory return resolution off direct `yfinance` calls and onto the configured stock-data vendor.
+4. Add config switches so weekly/non-interactive runs can disable Yahoo completely and avoid implicit fallback to it.
+
 # x_strategy_zoo Standalone Project Plan
 
 ## Problem

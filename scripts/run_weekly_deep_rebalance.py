@@ -2,6 +2,7 @@
 
 import os
 from pathlib import Path
+import subprocess
 import sys
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -11,10 +12,27 @@ if str(REPO_ROOT) not in sys.path:
 
 def _maybe_reexec_into_repo_venv() -> None:
     active_prefix = Path(sys.prefix).resolve()
-    for candidate in (
-        REPO_ROOT / ".venv313" / "bin" / "python",
+    candidates = (
         REPO_ROOT / ".venv" / "bin" / "python",
-    ):
+        REPO_ROOT / ".venv313" / "bin" / "python",
+    )
+
+    def _has_mcp(candidate: Path) -> bool:
+        try:
+            result = subprocess.run(
+                [str(candidate), "-c", "import mcp"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                check=False,
+            )
+        except OSError:
+            return False
+        return result.returncode == 0
+
+    preferred = [candidate for candidate in candidates if candidate.exists() and _has_mcp(candidate)]
+    fallback = [candidate for candidate in candidates if candidate.exists() and candidate not in preferred]
+
+    for candidate in (*preferred, *fallback):
         if not candidate.exists():
             continue
         venv_root = candidate.parent.parent.resolve()

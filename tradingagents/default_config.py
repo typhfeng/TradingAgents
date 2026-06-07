@@ -47,10 +47,15 @@ DEFAULT_CONFIG = {
     "max_recur_limit": 100,
     # Data vendor configuration
     "yfinance_timeout": float(os.getenv("TRADINGAGENTS_YFINANCE_TIMEOUT", "30")),
+    "disable_yfinance": os.getenv("TRADINGAGENTS_DISABLE_YFINANCE", "false").lower() == "true",
+    # When enabled, the router appends any unconfigured vendors after the
+    # explicit vendor list for a method/category. Batch jobs can disable this
+    # to avoid silently falling back to Yahoo.
+    "vendor_auto_fallback": os.getenv("TRADINGAGENTS_VENDOR_AUTO_FALLBACK", "true").lower() == "true",
     # Category-level configuration (default for all tools in category)
     "data_vendors": {
         "core_stock_apis": "yfinance",       # Options: alpha_vantage, yfinance, longbridge_mcp
-        "technical_indicators": "yfinance",  # Options: alpha_vantage, yfinance
+        "technical_indicators": "yfinance",  # Options: alpha_vantage, yfinance, longbridge_mcp
         "fundamental_data": "yfinance",      # Options: alpha_vantage, yfinance, longbridge_mcp
         "news_data": "yfinance",             # Options: alpha_vantage, yfinance, longbridge_mcp
     },

@@ -34,38 +34,35 @@ def test_get_provider_kwargs_omits_none_transport_settings():
     assert kwargs["thinking_level"] == "high"
 
 
-def test_fetch_returns_passes_yfinance_timeout(monkeypatch):
+def test_fetch_returns_uses_stock_data_router(monkeypatch):
     calls = []
 
-    class FakeTicker:
-        def __init__(self, symbol):
-            self.symbol = symbol
-
-        def history(self, **kwargs):
-            calls.append((self.symbol, kwargs))
-            import pandas as pd
-
-            return pd.DataFrame({"Close": [100.0, 101.0]})
+    def fake_route(method, symbol, start_date, end_date):
+        calls.append((method, symbol, start_date, end_date))
+        return "Date,Open,High,Low,Close,Volume\n2026-05-29,100,101,99,100,10\n2026-05-30,101,102,100,101,11\n"
 
     graph = TradingAgentsGraph.__new__(TradingAgentsGraph)
-    graph.config = {"yfinance_timeout": 17}
+    graph.config = {}
 
-    monkeypatch.setattr("tradingagents.graph.trading_graph.yf.Ticker", FakeTicker)
+    monkeypatch.setattr("tradingagents.graph.trading_graph.route_to_vendor", fake_route)
 
     raw, alpha, days = TradingAgentsGraph._fetch_returns(graph, "NVDA", "2026-05-29")
 
     assert raw == 0.01
     assert alpha == 0.0
     assert days == 1
-    assert calls[0][0] == "NVDA"
-    assert calls[1][0] == "SPY"
-    assert calls[0][1]["timeout"] == 17
-    assert calls[1][1]["timeout"] == 17
+    assert calls == [
+        ("get_stock_data", "NVDA", "2026-05-29", "2026-06-10"),
+        ("get_stock_data", "SPY", "2026-05-29", "2026-06-10"),
+    ]
 
 
 def test_weekly_config_disables_memory_outcome_resolution():
     config = build_weekly_config()
     assert config["resolve_memory_outcomes"] is False
+    assert config["disable_yfinance"] is True
+    assert config["vendor_auto_fallback"] is False
+    assert config["data_vendors"]["technical_indicators"] == "longbridge_mcp"
 
 
 def test_propagate_skips_memory_resolution_when_disabled(monkeypatch):

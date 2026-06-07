@@ -1,5 +1,6 @@
 import time
 import logging
+from io import StringIO
 
 import pandas as pd
 import yfinance as yf
@@ -13,9 +14,42 @@ from .utils import safe_ticker_component
 logger = logging.getLogger(__name__)
 
 
+class YahooFinanceError(RuntimeError):
+    """Raised when a Yahoo Finance vendor call is unavailable or invalid."""
+
+
 def get_yfinance_timeout() -> float:
     config = get_config()
     return float(config.get("yfinance_timeout", 30))
+
+
+def parse_ohlcv_csv_text(csv_text: str) -> pd.DataFrame:
+    """Parse a TradingAgents OHLCV text payload into a normalized DataFrame."""
+    csv_lines = [
+        line for line in csv_text.splitlines()
+        if line.strip() and not line.lstrip().startswith("#")
+    ]
+    if not csv_lines:
+        raise ValueError("No OHLCV CSV payload found")
+    data = pd.read_csv(StringIO("\n".join(csv_lines)), on_bad_lines="skip")
+    return _clean_dataframe(data)
+
+
+def calculate_indicator_bulk_from_df(data: pd.DataFrame, indicator: str) -> dict[str, str]:
+    """Calculate one stockstats indicator for every available date in a DataFrame."""
+    df = wrap(data.copy())
+    df["Date"] = pd.to_datetime(df["Date"], errors="coerce").dt.strftime("%Y-%m-%d")
+    df[indicator]
+
+    result_dict: dict[str, str] = {}
+    for _, row in df.iterrows():
+        date_str = row["Date"]
+        indicator_value = row[indicator]
+        if pd.isna(indicator_value):
+            result_dict[date_str] = "N/A"
+        else:
+            result_dict[date_str] = str(indicator_value)
+    return result_dict
 
 
 def yf_retry(func, max_retries=3, base_delay=2.0):
