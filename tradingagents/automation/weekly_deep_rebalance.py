@@ -6,6 +6,7 @@ import datetime as dt
 import json
 import multiprocessing as mp
 import re
+import sys
 import traceback
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -13,6 +14,10 @@ from typing import Iterable
 from zoneinfo import ZoneInfo
 
 from dotenv import load_dotenv
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 
 from tradingagents.agents.utils.rating import parse_rating
 from tradingagents.default_config import DEFAULT_CONFIG
@@ -59,14 +64,16 @@ class TickerRunResult:
 
 def build_weekly_config() -> dict:
     config = copy.deepcopy(DEFAULT_CONFIG)
+    config.setdefault("data_vendors", {})
+    config.setdefault("longbridge_mcp", {})
     config["output_language"] = "Chinese"
     config["max_debate_rounds"] = 2
     config["max_risk_discuss_rounds"] = 2
-    config["data_vendors"]["core_stock_apis"] = "longbridge_mcp"
-    config["data_vendors"]["fundamental_data"] = "longbridge_mcp"
-    config["data_vendors"]["news_data"] = "longbridge_mcp"
-    config["data_vendors"]["technical_indicators"] = "longbridge_mcp"
-    config["disable_yfinance"] = True
+    config["data_vendors"]["core_stock_apis"] = "longbridge_mcp,yfinance"
+    config["data_vendors"]["fundamental_data"] = "longbridge_mcp,yfinance"
+    config["data_vendors"]["news_data"] = "longbridge_mcp,yfinance"
+    config["data_vendors"]["technical_indicators"] = "yfinance"
+    config["disable_yfinance"] = False
     config["vendor_auto_fallback"] = False
     config["resolve_memory_outcomes"] = False
     config["longbridge_mcp"]["default_market"] = (

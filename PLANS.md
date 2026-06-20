@@ -29,6 +29,22 @@ Run a weekly deep TradingAgents rebalance across the fixed ticker universe, save
 - Reuse existing report-save behavior rather than extending the interactive CLI.
 - Prefer a standalone script so the Friday automation can be invoked directly and non-interactively.
 
+## 2026-06-19 Weekly Rebalance Run Note
+
+### Requested Runtime Policy
+
+- Universe: `NVDA, AAPL, MSFT, AMZN, MU, GOOGL, TSLA, GOOG, AMD, AVGO, WMT, BE, CRDO, FN, STRL, SATS, INTC, PLUG, F, ONDS, POET, AAL, SOFI, IREN, NU`
+- Analysts: `market`, `news`, `fundamentals`, `leap`
+- Language: Chinese
+- Debate depth: 2 investment rounds, 2 risk rounds
+- Data vendors:
+  - `core_stock_apis`: `longbridge_mcp,yfinance`
+  - `fundamental_data`: `longbridge_mcp,yfinance`
+  - `news_data`: `longbridge_mcp,yfinance`
+  - `technical_indicators`: `yfinance`
+- Persist each report under `/Volumes/ssd2/tradingagents/logs/reports/<TICKER>/<analysis_date>_<timestamp>/`
+- Emit `/Volumes/ssd2/tradingagents/output/target_allocation_<YYYY-MM-DD>.md` after verification
+
 # Longbridge MCP Data Source Plan
 
 ## Problem

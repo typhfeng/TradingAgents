@@ -6,6 +6,7 @@ from tradingagents.automation.weekly_deep_rebalance import (
     TickerRunResult,
     _load_result_from_disk,
     build_allocation_markdown,
+    build_weekly_config,
     count_leap_chain_unavailable,
     compute_target_weights,
     extract_markdown_section,
@@ -23,6 +24,30 @@ def test_extract_markdown_section_reads_until_next_header():
         "**Investment Thesis**: Demand is improving."
     )
     assert extract_markdown_section(text, "Executive Summary") == "Build in two tranches.\nSecond sentence."
+
+
+def test_build_weekly_config_matches_requested_vendor_policy():
+    config = build_weekly_config()
+    assert config["output_language"] == "Chinese"
+    assert config["max_debate_rounds"] == 2
+    assert config["max_risk_discuss_rounds"] == 2
+    assert config["data_vendors"]["core_stock_apis"] == "longbridge_mcp,yfinance"
+    assert config["data_vendors"]["fundamental_data"] == "longbridge_mcp,yfinance"
+    assert config["data_vendors"]["news_data"] == "longbridge_mcp,yfinance"
+    assert config["data_vendors"]["technical_indicators"] == "yfinance"
+    assert config["disable_yfinance"] is False
+    assert config["vendor_auto_fallback"] is False
+
+
+def test_build_weekly_config_restores_missing_nested_vendor_sections(monkeypatch):
+    monkeypatch.setattr(
+        "tradingagents.automation.weekly_deep_rebalance.DEFAULT_CONFIG",
+        {"output_language": "English"},
+    )
+    config = build_weekly_config()
+    assert config["data_vendors"]["core_stock_apis"] == "longbridge_mcp,yfinance"
+    assert config["data_vendors"]["technical_indicators"] == "yfinance"
+    assert config["longbridge_mcp"]["default_market"] == "US"
 
 
 def test_compute_target_weights_prefers_googl_over_goog():
