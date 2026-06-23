@@ -40,6 +40,21 @@ app = typer.Typer(
 )
 
 
+DISPLAY_AGENT_TEAMS = {
+    "Analyst Team": [
+        "Market Analyst",
+        "Social Analyst",
+        "News Analyst",
+        "Fundamentals Analyst",
+        "Leap Analyst",
+    ],
+    "Research Team": ["Bull Researcher", "Bear Researcher", "Research Manager"],
+    "Trading Team": ["Trader"],
+    "Risk Management": ["Aggressive Analyst", "Neutral Analyst", "Conservative Analyst"],
+    "Portfolio Management": ["Portfolio Manager"],
+}
+
+
 # Create a deque to store recent messages with a maximum length
 class MessageBuffer:
     # Fixed teams that always run (not user-selectable)
@@ -286,23 +301,9 @@ def update_display(layout, spinner_text=None, stats_handler=None, start_time=Non
     progress_table.add_column("Agent", style="green", justify="center", width=20)
     progress_table.add_column("Status", style="yellow", justify="center", width=20)
 
-    # Group agents by team - filter to only include agents in agent_status
-    all_teams = {
-        "Analyst Team": [
-            "Market Analyst",
-            "Social Analyst",
-            "News Analyst",
-            "Fundamentals Analyst",
-        ],
-        "Research Team": ["Bull Researcher", "Bear Researcher", "Research Manager"],
-        "Trading Team": ["Trader"],
-        "Risk Management": ["Aggressive Analyst", "Neutral Analyst", "Conservative Analyst"],
-        "Portfolio Management": ["Portfolio Manager"],
-    }
-
     # Filter teams to only include agents that are in agent_status
     teams = {}
-    for team, agents in all_teams.items():
+    for team, agents in DISPLAY_AGENT_TEAMS.items():
         active_agents = [a for a in agents if a in message_buffer.agent_status]
         if active_agents:
             teams[team] = active_agents
@@ -830,6 +831,14 @@ ANALYST_REPORT_MAP = {
 }
 
 
+def first_selected_analyst_agent(selected_analyst_keys):
+    """Return the display name for the first analyst in execution order."""
+    for analyst_key in ANALYST_ORDER:
+        if analyst_key in selected_analyst_keys:
+            return ANALYST_AGENT_NAMES[analyst_key]
+    return None
+
+
 def update_analyst_statuses(message_buffer, chunk):
     """Update analyst statuses based on accumulated report state.
 
@@ -1052,9 +1061,10 @@ def run_analysis(checkpoint: bool = False):
         )
         update_display(layout, stats_handler=stats_handler, start_time=start_time)
 
-        # Update agent status to in_progress for the first analyst
-        first_analyst = f"{selections['analysts'][0].value.capitalize()} Analyst"
-        message_buffer.update_agent_status(first_analyst, "in_progress")
+        # Update agent status to in_progress for the first analyst in execution order
+        first_analyst = first_selected_analyst_agent(selected_analyst_keys)
+        if first_analyst:
+            message_buffer.update_agent_status(first_analyst, "in_progress")
         update_display(layout, stats_handler=stats_handler, start_time=start_time)
 
         # Create spinner text
